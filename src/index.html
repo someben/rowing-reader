@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ｒｏｗｉｎｇ Ｒｅａｄｅｒ</title>
+    <link rel="stylesheet" href="styles.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Source+Sans+3:wght@300;400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <div class="brand">
+          <div class="brand-title">
+            <a class="brand-title-link" href="/">
+              <span class="brand-title-text">Ｒｏｗｉｎｇ Ｒｅａｄｅｒ</span>
+            </a>
+            <span id="titleSpinner" class="title-spinner is-hidden" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="12" cy="12" r="8" fill="none" stroke="#6495ed" stroke-width="3" stroke-linecap="round" />
+                <animateTransform
+                  attributeName="transform"
+                  type="rotate"
+                  from="0 12 12"
+                  to="360 12 12"
+                  dur="0.8s"
+                  repeatCount="indefinite"
+                />
+              </svg>
+            </span>
+          </div>
+          <div class="brand-subtitle">PDF, Markdown, or HTML — locked viewport reading</div>
+        </div>
+        <div id="progressWrap" class="progress-wrap is-hidden" aria-label="Progress">
+          <div class="progress-bar">
+            <div id="progressFill" class="progress-fill"></div>
+          </div>
+          <div id="progressText" class="progress-text">0%</div>
+        </div>
+        <div class="controls">
+          <label class="file-button">
+            Upload
+            <input id="fileInput" type="file" accept=".pdf,.md,.markdown,.txt,.html,.htm" />
+          </label>
+          <button id="halfToggle" type="button" class="control-button toggle-button" aria-pressed="false">
+            Half Mode
+          </button>
+        </div>
+      </header>
+
+      <section id="dropZone" class="drop-zone">
+        <div class="drop-inner">
+          <div class="drop-title">Drag-and-drop a file</div>
+          <div class="url-input-row">
+            <input
+              id="urlInput"
+              type="url"
+              placeholder="...or paste a URL here"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <button id="urlLoad" type="button" class="control-button">Load URL</button>
+          </div>
+        </div>
+      </section>
+      <div id="loadingSpinner" class="loading-spinner is-hidden" aria-hidden="true"></div>
+
+      <main id="viewer" class="viewer" aria-live="polite">
+        <div id="scrollArea" class="scroll-area">
+          <div id="content" class="content">
+          </div>
+        </div>
+      </main>
+
+      <button
+        id="scrollBack"
+        class="unlock-zone unlock-zone-back"
+        type="button"
+        tabindex="-1"
+      >
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <polygon points="95,45 30,45 30,30 5,50 30,70 30,55 95,55" />
+        </svg>
+      </button>
+      <button
+        id="unlockZone"
+        class="unlock-zone unlock-zone-forward"
+        type="button"
+        tabindex="-1"
+      >
+        <svg viewBox="0 0 100 100" aria-hidden="true">
+          <polygon points="5,45 70,45 70,30 95,50 70,70 70,55 5,55" />
+        </svg>
+      </button>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js" defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js" defer></script>
+    <script src="app.js" defer></script>
+  </body>
+</html>
