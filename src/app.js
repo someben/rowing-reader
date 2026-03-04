@@ -38,6 +38,7 @@ const state = {
   lastTapX: 0,
   lastTapY: 0,
   ignoreClickUntil: 0,
+  scrollRestore: null,
 };
 
 const HTML_STYLE = `
@@ -180,6 +181,7 @@ function renderHalfText(html) {
       await waitForImages(content);
       captureSlicePositions();
       logSlicePositions("Half text render");
+      applyScrollRestore();
       queueScrollUpdate();
     });
   });
@@ -202,6 +204,7 @@ function renderMarkdown(text) {
     article.appendChild(pre);
   }
   content.appendChild(article);
+  applyScrollRestore();
   queueScrollUpdate();
 }
 
@@ -220,6 +223,7 @@ function renderText(text) {
   pre.style.whiteSpace = "pre-wrap";
   pre.style.wordBreak = "break-word";
   content.appendChild(pre);
+  applyScrollRestore();
   queueScrollUpdate();
 }
 
@@ -245,6 +249,7 @@ function renderHtml(text) {
   iframe.onload = () => {
     applyIframeStyles(iframe);
     updateScrollButtons();
+    applyScrollRestore();
   };
   content.appendChild(iframe);
   state.currentIframe = iframe;
@@ -385,6 +390,47 @@ async function loadPdfDocument(pdfData) {
   return pdf;
 }
 
+function captureScrollRestore() {
+  const maxScroll = scrollArea.scrollHeight - scrollArea.clientHeight;
+  if (state.currentType === "pdf" && state.slicePositions.length) {
+    const index = getCurrentSliceIndex();
+    const slice = state.slicePositions[index];
+    const offset = scrollArea.scrollTop - slice.top;
+    const pageIndex = state.halfMode ? Math.floor(index / 2) : index;
+    const halfIndex = state.halfMode ? index % 2 : 0;
+    return { kind: "pdf", pageIndex, halfIndex, offset };
+  }
+  const ratio = maxScroll > 0 ? scrollArea.scrollTop / maxScroll : 0;
+  return { kind: "ratio", ratio };
+}
+
+function applyScrollRestore() {
+  const restore = state.scrollRestore;
+  if (!restore) return;
+  state.scrollRestore = null;
+
+  if (restore.kind === "pdf" && state.currentType === "pdf" && state.slicePositions.length) {
+    let index = restore.pageIndex;
+    if (state.halfMode) {
+      index = restore.pageIndex * 2 + Math.min(restore.halfIndex, 1);
+    }
+    index = Math.max(0, Math.min(index, state.slicePositions.length - 1));
+    const slice = state.slicePositions[index];
+    const maxTop = Math.max(slice.bottom - scrollArea.clientHeight, slice.top);
+    const targetTop = Math.min(Math.max(slice.top + restore.offset, slice.top), maxTop);
+    scrollArea.scrollTo({ top: targetTop, behavior: "auto" });
+    queueScrollUpdate();
+    return;
+  }
+
+  if (restore.kind === "ratio") {
+    const maxScroll = scrollArea.scrollHeight - scrollArea.clientHeight;
+    const targetTop = maxScroll > 0 ? restore.ratio * maxScroll : 0;
+    scrollArea.scrollTo({ top: targetTop, behavior: "auto" });
+    queueScrollUpdate();
+  }
+}
+
 async function renderPdfFromDoc() {
   if (!window.pdfjsLib) {
     renderText("PDF renderer not available. Check the PDF.js script link.");
@@ -499,6 +545,7 @@ async function renderPdfFromDoc() {
     });
     captureSlicePositions();
     logSlicePositions("PDF render");
+    applyScrollRestore();
     if (state.resetScrollOnRender) {
       scrollArea.scrollTop = 0;
       state.resetScrollOnRender = false;
@@ -688,13 +735,17 @@ function setupStrictScrolling() {
       const index = getCurrentSliceIndex();
       const slice = state.slicePositions[index];
       const step = getScrollStep();
-      const nextBottom = scrollArea.scrollTop + scrollArea.clientHeight + step;
-      if (nextBottom >= slice.bottom - 1) {
-        if (index + 1 < state.slicePositions.length) {
-          scrollArea.scrollTo({ top: state.slicePositions[index + 1].top, behavior: "auto" });
-          queueScrollUpdate();
-          return;
-        }
+      const maxTop = Math.max(slice.bottom - scrollArea.clientHeight, slice.top);
+      if (scrollArea.scrollTop < maxTop - 1) {
+        const targetTop = Math.min(scrollArea.scrollTop + step, maxTop);
+        scrollArea.scrollTo({ top: targetTop, behavior: "auto" });
+        queueScrollUpdate();
+        return;
+      }
+      if (index + 1 < state.slicePositions.length) {
+        scrollArea.scrollTo({ top: state.slicePositions[index + 1].top, behavior: "auto" });
+        queueScrollUpdate();
+        return;
       }
     }
     scrollArea.scrollBy({ top: getScrollStep(), behavior: "auto" });
@@ -708,15 +759,19 @@ function setupStrictScrolling() {
       const index = getCurrentSliceIndex();
       const slice = state.slicePositions[index];
       const step = getScrollStep();
-      const nextTop = scrollArea.scrollTop - step;
-      if (nextTop <= slice.top + 1) {
-        if (index > 0) {
-          const prev = state.slicePositions[index - 1];
-          const targetTop = Math.max(prev.bottom - scrollArea.clientHeight, prev.top);
-          scrollArea.scrollTo({ top: targetTop, behavior: "auto" });
-          queueScrollUpdate();
-          return;
-        }
+      const minTop = slice.top;
+      if (scrollArea.scrollTop > minTop + 1) {
+        const targetTop = Math.max(scrollArea.scrollTop - step, minTop);
+        scrollArea.scrollTo({ top: targetTop, behavior: "auto" });
+        queueScrollUpdate();
+        return;
+      }
+      if (index > 0) {
+        const prev = state.slicePositions[index - 1];
+        const targetTop = Math.max(prev.bottom - scrollArea.clientHeight, prev.top);
+        scrollArea.scrollTo({ top: targetTop, behavior: "auto" });
+        queueScrollUpdate();
+        return;
       }
     }
     scrollArea.scrollBy({ top: -getScrollStep(), behavior: "auto" });
@@ -829,6 +884,7 @@ function setupEvents() {
   });
 
   halfToggle.addEventListener("click", () => {
+    state.scrollRestore = captureScrollRestore();
     state.halfMode = !state.halfMode;
     updateHalfToggle();
     console.info(`[Rowing Reader] Half Mode ${state.halfMode ? "enabled" : "disabled"}`);
