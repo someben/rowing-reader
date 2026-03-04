@@ -649,6 +649,13 @@ function preventScroll(event) {
 function setupStrictScrolling() {
   document.addEventListener("wheel", preventScroll, { passive: false });
   document.addEventListener("touchmove", preventScroll, { passive: false });
+  const preventGesture = (event) => {
+    event.preventDefault();
+  };
+  document.addEventListener("gesturestart", preventGesture, { passive: false });
+  document.addEventListener("gesturechange", preventGesture, { passive: false });
+  document.addEventListener("gestureend", preventGesture, { passive: false });
+  document.addEventListener("dblclick", preventGesture, { passive: false });
   document.addEventListener(
     "touchend",
     (event) => {

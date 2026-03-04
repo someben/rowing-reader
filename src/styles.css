@@ -59,18 +59,20 @@ body.has-file .status {
 }
 
 .topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 24px;
+  height: 72px;
 }
 
 .progress-wrap {
-  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 0 8px;
   display: grid;
-  justify-items: center;
+  justify-items: stretch;
   gap: 6px;
-  min-width: 180px;
 }
 
 .progress-wrap.is-hidden {
@@ -78,7 +80,7 @@ body.has-file .status {
 }
 
 .progress-bar {
-  width: min(420px, 48vw);
+  width: 100%;
   height: 8px;
   border-radius: 999px;
   background: rgba(20, 24, 32, 0.12);
@@ -98,12 +100,13 @@ body.has-file .status {
 }
 
 .brand-title {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   letter-spacing: 0.02em;
   display: flex;
   align-items: center;
   gap: 10px;
+  white-space: nowrap;
 }
 
 .brand-title-link {
@@ -120,6 +123,10 @@ body.has-file .status {
 .brand-subtitle {
   font-size: 13px;
   color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 42ch;
 }
 
 .title-spinner {
@@ -146,6 +153,7 @@ body.has-file .status {
   padding: 0;
   border-radius: 0;
   box-shadow: none;
+  white-space: nowrap;
 }
 
 .file-button {
@@ -409,13 +417,13 @@ body.has-file .status {
   }
 
   .topbar {
-    flex-direction: column;
-    align-items: flex-start;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 12px;
   }
 
   .progress-wrap {
     width: 100%;
-    justify-items: flex-start;
+    justify-items: stretch;
   }
 
   .progress-bar {
@@ -423,12 +431,16 @@ body.has-file .status {
   }
 
   .controls {
-    width: 100%;
-    justify-content: space-between;
+    width: auto;
+    justify-content: flex-end;
   }
 
   .unlock-zone {
     height: 20vh;
     width: max(20vw, 140px);
+  }
+
+  .brand-subtitle {
+    display: none;
   }
 }
