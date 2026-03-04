@@ -114,6 +114,22 @@ function setLoading(isLoading) {
   }
 }
 
+function isReasonableUrl(rawUrl) {
+  const value = rawUrl?.trim();
+  if (!value) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "file:";
+  } catch {
+    return false;
+  }
+}
+
+function updateUrlButtonState() {
+  if (!urlLoad) return;
+  urlLoad.disabled = !isReasonableUrl(urlInput?.value);
+}
+
 function getScrollStep() {
   return Math.round(scrollArea.clientHeight * 0.85);
 }
@@ -155,21 +171,40 @@ function applyTextHalfColumn() {
   state.textColumnsEl.classList.toggle("column-right", state.halfTextColumn === 1);
 }
 
+function getTextWidth() {
+  const width = getContentWidth();
+  return Math.min(width, 820);
+}
+
+function applyTextWidths(node, width) {
+  node.style.maxWidth = `${width}px`;
+  node.style.margin = "0 auto";
+}
+
 function renderHalfText(html) {
   resetContent();
   content.classList.add("half-text-mode");
 
+  const fullWidth = getTextWidth();
+  const halfWidth = Math.max(240, Math.floor(fullWidth / 2));
+
   const left = document.createElement("div");
   left.className = "half-slice slice slice-left";
+  applyTextWidths(left, fullWidth);
   const leftColumns = document.createElement("div");
   leftColumns.className = "text-columns";
+  leftColumns.style.width = `${halfWidth * 2}px`;
+  leftColumns.style.columnWidth = `${halfWidth}px`;
   leftColumns.innerHTML = html;
   left.appendChild(leftColumns);
 
   const right = document.createElement("div");
   right.className = "half-slice slice slice-right";
+  applyTextWidths(right, fullWidth);
   const rightColumns = document.createElement("div");
   rightColumns.className = "text-columns column-right";
+  rightColumns.style.width = `${halfWidth * 2}px`;
+  rightColumns.style.columnWidth = `${halfWidth}px`;
   rightColumns.innerHTML = html;
   right.appendChild(rightColumns);
 
@@ -191,6 +226,7 @@ function renderMarkdown(text) {
   resetContent();
   const article = document.createElement("article");
   article.className = "reader-article";
+  applyTextWidths(article, getTextWidth());
   if (window.marked && typeof window.marked.parse === "function") {
     const html = window.marked.parse(text);
     if (state.halfMode) {
@@ -222,6 +258,7 @@ function renderText(text) {
   pre.textContent = text;
   pre.style.whiteSpace = "pre-wrap";
   pre.style.wordBreak = "break-word";
+  applyTextWidths(pre, getTextWidth());
   content.appendChild(pre);
   applyScrollRestore();
   queueScrollUpdate();
@@ -873,6 +910,7 @@ function setupEvents() {
   });
 
   urlLoad.addEventListener("click", () => {
+    if (urlLoad.disabled) return;
     handleUrlLoad(urlInput.value);
   });
 
@@ -881,6 +919,10 @@ function setupEvents() {
       event.preventDefault();
       handleUrlLoad(urlInput.value);
     }
+  });
+
+  urlInput.addEventListener("input", () => {
+    updateUrlButtonState();
   });
 
   halfToggle.addEventListener("click", () => {
@@ -930,6 +972,7 @@ setupEvents();
 setFontSize(BASE_FONT_SIZE);
 updateHalfToggle();
 queueScrollUpdate();
+updateUrlButtonState();
 
 document.addEventListener("pdf-render-complete", () => {
   if (progressWrap) {
