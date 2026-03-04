@@ -2,6 +2,8 @@
 
 Minimal webapp to render PDF, Markdown, or HTML with a locked viewport and controlled scrolling.
 
+![Rowing Reader cartoon](assets/rr.jpg)
+
 ## Run
 
 Use any static server (recommended) or open the file directly.
