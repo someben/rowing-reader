@@ -1,0 +1,16 @@
+# SSL Certificates (project-local)
+/certs/
+
+# Node modules (if using Node.js server)
+/node_modules/
+
+# OS files
+/.DS_Store
+/Thumbs.db
+
+#+ Editor files
+/.vscode/
+/.idea/
+*.swp
+*.swo
+*~
