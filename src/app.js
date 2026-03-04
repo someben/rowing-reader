@@ -34,6 +34,9 @@ const state = {
   slicePositions: [],
   halfTextColumn: 0,
   textColumnsEl: null,
+  lastTapTime: 0,
+  lastTapX: 0,
+  lastTapY: 0,
 };
 
 const HTML_STYLE = `
@@ -646,6 +649,29 @@ function preventScroll(event) {
 function setupStrictScrolling() {
   document.addEventListener("wheel", preventScroll, { passive: false });
   document.addEventListener("touchmove", preventScroll, { passive: false });
+  document.addEventListener(
+    "touchend",
+    (event) => {
+      if (!event.changedTouches || event.changedTouches.length !== 1) return;
+      if (event.touches && event.touches.length > 0) return;
+
+      const touch = event.changedTouches[0];
+      const now = Date.now();
+      const dt = now - state.lastTapTime;
+      const dx = Math.abs(touch.clientX - state.lastTapX);
+      const dy = Math.abs(touch.clientY - state.lastTapY);
+      const isDoubleTap = dt > 0 && dt < 300 && dx < 24 && dy < 24;
+
+      state.lastTapTime = now;
+      state.lastTapX = touch.clientX;
+      state.lastTapY = touch.clientY;
+
+      if (isDoubleTap) {
+        event.preventDefault();
+      }
+    },
+    { passive: false },
+  );
   const scrollForward = () => {
     if (state.halfMode && !state.slicePositions.length) {
       console.warn("[Rowing Reader] Half Mode: no slices available for scroll forward");

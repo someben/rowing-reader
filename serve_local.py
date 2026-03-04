@@ -84,7 +84,14 @@ def main() -> int:
         )
         return 2
 
-    https_handler = partial(SimpleHTTPRequestHandler, directory=str(root))
+    class NoCacheRequestHandler(SimpleHTTPRequestHandler):
+        def end_headers(self) -> None:
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
+            super().end_headers()
+
+    https_handler = partial(NoCacheRequestHandler, directory=str(root))
 
     class RedirectHandler(BaseHTTPRequestHandler):
         def _redirect(self) -> None:
@@ -95,6 +102,9 @@ def main() -> int:
             host = f"{host}:{args.https_port}"
             target = urlunsplit(("https", host, self.path, "", ""))
             self.send_response(301)
+            self.send_header("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+            self.send_header("Pragma", "no-cache")
+            self.send_header("Expires", "0")
             self.send_header("Location", target)
             self.end_headers()
 
