@@ -37,6 +37,7 @@ const state = {
   lastTapTime: 0,
   lastTapX: 0,
   lastTapY: 0,
+  ignoreClickUntil: 0,
 };
 
 const HTML_STYLE = `
@@ -760,12 +761,36 @@ function setupStrictScrolling() {
   });
 
   unlockZone.addEventListener("click", () => {
+    if (Date.now() < state.ignoreClickUntil) return;
     scrollForward();
   });
 
   scrollBack.addEventListener("click", () => {
+    if (Date.now() < state.ignoreClickUntil) return;
     scrollBackward();
   });
+
+  const handleTouchScroll = (event, direction) => {
+    event.preventDefault();
+    state.ignoreClickUntil = Date.now() + 500;
+    if (direction === "forward") {
+      scrollForward();
+    } else {
+      scrollBackward();
+    }
+  };
+
+  unlockZone.addEventListener(
+    "touchstart",
+    (event) => handleTouchScroll(event, "forward"),
+    { passive: false },
+  );
+
+  scrollBack.addEventListener(
+    "touchstart",
+    (event) => handleTouchScroll(event, "back"),
+    { passive: false },
+  );
 
   scrollArea.addEventListener("scroll", () => {
     updateScrollButtons();
