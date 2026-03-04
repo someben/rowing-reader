@@ -199,6 +199,18 @@ body.has-file .status {
   box-shadow: none;
 }
 
+.control-button:disabled,
+.file-button:has(input:disabled) {
+  background: rgba(20, 24, 32, 0.18);
+  color: rgba(20, 24, 32, 0.45);
+  cursor: not-allowed;
+}
+
+.control-button:disabled:hover,
+.file-button:has(input:disabled):hover {
+  background: rgba(20, 24, 32, 0.18);
+}
+
 .toggle-button[aria-pressed="true"] {
   background: #4a7bd1;
 }

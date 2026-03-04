@@ -181,39 +181,97 @@ function applyTextWidths(node, width) {
   node.style.margin = "0 auto";
 }
 
+function createHalfSlice({ html, fullWidth, textWidth, baseHeight, pageHeight, offsetX, offsetY }) {
+  const slice = document.createElement("div");
+  slice.className = "half-slice slice";
+  slice.style.height = `${pageHeight}px`;
+
+  const zoom = document.createElement("div");
+  zoom.className = "half-zoom";
+  zoom.style.width = `${fullWidth}px`;
+  zoom.style.height = `${baseHeight}px`;
+  zoom.style.transform = "scale(2)";
+  zoom.style.transformOrigin = "top left";
+
+  const inner = document.createElement("div");
+  inner.className = "half-zoom-inner";
+  inner.style.width = `${fullWidth}px`;
+  inner.style.position = "relative";
+  inner.style.left = `${-offsetX}px`;
+  inner.style.top = `${-offsetY}px`;
+
+  const article = document.createElement("article");
+  article.className = "reader-article";
+  applyTextWidths(article, textWidth);
+  article.innerHTML = html;
+  inner.appendChild(article);
+  zoom.appendChild(inner);
+  slice.appendChild(zoom);
+  return slice;
+}
+
 function renderHalfText(html) {
   resetContent();
   content.classList.add("half-text-mode");
 
-  const fullWidth = getTextWidth();
-  const halfWidth = Math.max(240, Math.floor(fullWidth / 2));
+  const fullWidth = getContentWidth();
+  const textWidth = getTextWidth();
 
-  const left = document.createElement("div");
-  left.className = "half-slice slice slice-left";
-  applyTextWidths(left, fullWidth);
-  const leftColumns = document.createElement("div");
-  leftColumns.className = "text-columns";
-  leftColumns.style.width = `${halfWidth * 2}px`;
-  leftColumns.style.columnWidth = `${halfWidth}px`;
-  leftColumns.innerHTML = html;
-  left.appendChild(leftColumns);
+  const measure = document.createElement("div");
+  measure.style.position = "absolute";
+  measure.style.visibility = "hidden";
+  measure.style.pointerEvents = "none";
+  measure.style.left = "-99999px";
+  measure.style.top = "0";
+  measure.style.width = `${fullWidth}px`;
+  const measureArticle = document.createElement("article");
+  measureArticle.className = "reader-article";
+  applyTextWidths(measureArticle, textWidth);
+  measureArticle.innerHTML = html;
+  measure.appendChild(measureArticle);
+  content.appendChild(measure);
 
-  const right = document.createElement("div");
-  right.className = "half-slice slice slice-right";
-  applyTextWidths(right, fullWidth);
-  const rightColumns = document.createElement("div");
-  rightColumns.className = "text-columns column-right";
-  rightColumns.style.width = `${halfWidth * 2}px`;
-  rightColumns.style.columnWidth = `${halfWidth}px`;
-  rightColumns.innerHTML = html;
-  right.appendChild(rightColumns);
-
-  content.appendChild(left);
-  content.appendChild(right);
-  state.textColumnsEl = rightColumns;
+  state.textColumnsEl = null;
   requestAnimationFrame(() => {
     requestAnimationFrame(async () => {
-      await waitForImages(content);
+      await waitForImages(measure);
+      const baseHeight = measureArticle.scrollHeight;
+      measure.remove();
+
+      const pageHeight = Math.max(1, scrollArea.clientHeight);
+      const scaledHeight = baseHeight * 2;
+      const totalPages = Math.max(1, Math.ceil(scaledHeight / pageHeight));
+      const pageStep = pageHeight / 2;
+      const halfOffsetX = fullWidth / 2;
+
+      for (let i = 0; i < totalPages; i += 1) {
+        const offsetY = i * pageStep;
+        const leftSlice = createHalfSlice({
+          html,
+          fullWidth,
+          textWidth,
+          baseHeight,
+          pageHeight,
+          offsetX: 0,
+          offsetY,
+        });
+        leftSlice.classList.add("slice-left");
+
+        const rightSlice = createHalfSlice({
+          html,
+          fullWidth,
+          textWidth,
+          baseHeight,
+          pageHeight,
+          offsetX: halfOffsetX,
+          offsetY,
+        });
+        rightSlice.classList.add("slice-right");
+
+        content.appendChild(leftSlice);
+        content.appendChild(rightSlice);
+      }
+
       captureSlicePositions();
       logSlicePositions("Half text render");
       applyScrollRestore();
