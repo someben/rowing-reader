@@ -3,6 +3,8 @@
 
 # Node modules (if using Node.js server)
 /node_modules/
+/test-results/
+/playwright-report/
 
 # OS files
 /.DS_Store
