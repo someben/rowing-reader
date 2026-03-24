@@ -21,7 +21,7 @@ async function loadTestPdf(page) {
   });
 }
 
-test("full-mode PDF scrolls exactly one viewport height per click", async ({ page }) => {
+test("full-mode PDF scrolls one viewport minus one line height per click", async ({ page }) => {
   await loadTestPdf(page);
 
   const result = await page.evaluate(() => {
@@ -29,6 +29,9 @@ test("full-mode PDF scrolls exactly one viewport height per click", async ({ pag
     const forward = document.getElementById("unlockZone");
     scrollArea.scrollTop = 0;
     const height = scrollArea.clientHeight;
+    const fontSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--reader-font-size"));
+    const lineHeight = Math.round(fontSize * 1.7);
+    const expectedStep = Math.max(lineHeight, height - lineHeight);
     const before = scrollArea.scrollTop;
     forward.click();
     return new Promise((resolve) => {
@@ -37,8 +40,9 @@ test("full-mode PDF scrolls exactly one viewport height per click", async ({ pag
           resolve({
             before,
             after: scrollArea.scrollTop,
-            height,
+            expectedStep,
             scrollHeight: scrollArea.scrollHeight,
+            height,
           });
         });
       });
@@ -47,32 +51,5 @@ test("full-mode PDF scrolls exactly one viewport height per click", async ({ pag
 
   const delta = result.after - result.before;
   expect(result.scrollHeight).toBeGreaterThan(result.height + 50);
-  expect(Math.abs(delta - result.height)).toBeLessThanOrEqual(2);
-});
-
-test("full-mode PDF scroll emits exact-scroll logs", async ({ page }) => {
-  const logs = [];
-  page.on("console", (msg) => {
-    const text = msg.text();
-    if (text.includes("[Rowing Reader] exact-scroll")) {
-      logs.push(text);
-    }
-  });
-
-  await loadTestPdf(page);
-
-  await page.evaluate(() => {
-    const scrollArea = document.getElementById("scrollArea");
-    scrollArea.scrollTop = 0;
-    document.getElementById("unlockZone").click();
-  });
-
-  await expect.poll(() => logs.length).toBeGreaterThanOrEqual(2);
-
-  const startLog = logs.find((line) => line.includes("exact-scroll start"));
-  const endLog = logs.find((line) => line.includes("exact-scroll end"));
-  expect(startLog).toBeTruthy();
-  expect(endLog).toBeTruthy();
-
-  // We only require that the start/end log lines are emitted; payload format may vary by browser.
+  expect(Math.abs(delta - result.expectedStep)).toBeLessThanOrEqual(2);
 });

@@ -132,12 +132,8 @@ function updateUrlButtonState() {
 
 function getScrollStep() {
   const height = Math.max(1, scrollArea.clientHeight);
-  const isFullPdf =
-    !state.halfMode && (state.currentType === "pdf" || content.classList.contains("pdf-mode"));
-  if (isFullPdf) {
-    return height;
-  }
-  return Math.round(height * 0.85);
+  const lineHeight = Math.round(state.fontSize * 1.7);
+  return Math.max(lineHeight, height - lineHeight);
 }
 
 function setFontSize(size) {
@@ -828,43 +824,6 @@ function setupStrictScrolling() {
     },
     { passive: false },
   );
-  const scrollByExact = (delta) => {
-    const startTop = scrollArea.scrollTop;
-    const targetTop = startTop + delta;
-    const maxScroll = scrollArea.scrollHeight - scrollArea.clientHeight;
-    const clampedTarget = Math.min(targetTop, maxScroll);
-    console.info(
-      "[Rowing Reader] exact-scroll start",
-      JSON.stringify({
-        delta,
-        startTop,
-        targetTop,
-        clampedTarget,
-        clientHeight: scrollArea.clientHeight,
-        scrollHeight: scrollArea.scrollHeight,
-      }),
-    );
-    scrollArea.scrollTo({ top: clampedTarget, behavior: "auto" });
-    requestAnimationFrame(() => {
-      const correctedMax = scrollArea.scrollHeight - scrollArea.clientHeight;
-      const correctedTarget = Math.min(targetTop, correctedMax);
-      const endTop = scrollArea.scrollTop;
-      if (Math.abs(scrollArea.scrollTop - correctedTarget) > 1) {
-        scrollArea.scrollTo({ top: correctedTarget, behavior: "auto" });
-      }
-      console.info(
-        "[Rowing Reader] exact-scroll end",
-        JSON.stringify({
-          endTop,
-          correctedTarget,
-          correctedMax,
-          clientHeight: scrollArea.clientHeight,
-          scrollHeight: scrollArea.scrollHeight,
-        }),
-      );
-      queueScrollUpdate();
-    });
-  };
   const scrollForward = () => {
     if (state.halfMode && !state.slicePositions.length) {
       console.warn("[Rowing Reader] Half Mode: no slices available for scroll forward");
@@ -886,13 +845,9 @@ function setupStrictScrolling() {
         return;
       }
     }
-    const isFullPdf =
-      !state.halfMode && (state.currentType === "pdf" || content.classList.contains("pdf-mode"));
-    if (isFullPdf) {
-      scrollByExact(scrollArea.clientHeight);
-      return;
-    }
-    scrollArea.scrollBy({ top: getScrollStep(), behavior: "auto" });
+    const step = getScrollStep();
+    const target = Math.min(scrollArea.scrollTop + step, scrollArea.scrollHeight - scrollArea.clientHeight);
+    scrollArea.scrollTo({ top: target, behavior: "auto" });
     queueScrollUpdate();
   };
   const scrollBackward = () => {
@@ -918,13 +873,9 @@ function setupStrictScrolling() {
         return;
       }
     }
-    const isFullPdf =
-      !state.halfMode && (state.currentType === "pdf" || content.classList.contains("pdf-mode"));
-    if (isFullPdf) {
-      scrollByExact(-scrollArea.clientHeight);
-      return;
-    }
-    scrollArea.scrollBy({ top: -getScrollStep(), behavior: "auto" });
+    const step = getScrollStep();
+    const target = Math.max(scrollArea.scrollTop - step, 0);
+    scrollArea.scrollTo({ top: target, behavior: "auto" });
     queueScrollUpdate();
   };
 

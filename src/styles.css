@@ -63,7 +63,7 @@ body.has-file .status {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 24px;
-  height: 72px;
+  height: 40px;
 }
 
 .progress-wrap {
@@ -382,7 +382,7 @@ body.has-file .status {
   position: fixed;
   bottom: 18px;
   height: 20vh;
-  width: max(20vw, 180px);
+  width: max(17vw, 120px);
   border-radius: 16px;
   border: 1px solid rgba(50, 50, 50, 0.28);
   background: rgba(251, 250, 248, 0.62);
@@ -449,7 +449,7 @@ body.has-file .status {
 
   .unlock-zone {
     height: 20vh;
-    width: max(20vw, 140px);
+    width: max(17vw, 120px);
   }
 
   .brand-subtitle {
