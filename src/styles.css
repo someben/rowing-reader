@@ -362,15 +362,13 @@ body.has-file .status {
 
 .pdf-pages {
   display: grid;
-  gap: 28px;
+  gap: 0;
   width: 100%;
 }
 
 .pdf-page {
   display: block;
   max-width: none;
-  border-radius: 12px;
-  box-shadow: 0 12px 26px rgba(15, 18, 28, 0.14);
 }
 
 .status {

@@ -28,7 +28,7 @@ const state = {
   lastSize: { width: 0, height: 0 },
   halfMode: false,
   resetScrollOnRender: false,
-  pdfCropRel: null,
+  pdfCropPerPage: null,
   pdfCropEnabled: false,
   scrollUpdateQueued: false,
   slicePositions: [],
@@ -164,7 +164,7 @@ function resetContent() {
   state.slicePositions = [];
   state.textColumnsEl = null;
   state.halfTextColumn = 0;
-  state.pdfCropRel = null;
+  state.pdfCropPerPage = null;
   state.pdfCropEnabled = false;
 }
 
@@ -547,35 +547,41 @@ async function renderPdfFromDoc() {
     const contentWidth = getContentWidth();
     const scaleFactor = 1;
 
-    if (!state.pdfCropRel && pdf.numPages > 0) {
-      let bestCrop = null;
-      let bestArea = 0;
+    if (!state.pdfCropPerPage && pdf.numPages > 0) {
+      const perPage = [];
       let anyMarginHeavy = false;
+      let xMin = 1;
+      let xMax = 0;
       for (let i = 1; i <= pdf.numPages; i += 1) {
         const page = await pdf.getPage(i);
         const baseViewport = page.getViewport({ scale: 1 });
         const analysis = await analyzePageContentBox(page);
-        if (!analysis.crop) continue;
+        if (!analysis.crop) {
+          perPage.push(null);
+          continue;
+        }
         const rel = {
           x: analysis.crop.x / baseViewport.width,
           y: analysis.crop.y / baseViewport.height,
           width: analysis.crop.width / baseViewport.width,
           height: analysis.crop.height / baseViewport.height,
         };
-        const area = rel.width * rel.height;
-        if (area > bestArea) {
-          bestArea = area;
-          bestCrop = rel;
-        }
+        perPage.push(rel);
+        xMin = Math.min(xMin, rel.x);
+        xMax = Math.max(xMax, rel.x + rel.width);
         if (analysis.isMarginHeavy) {
           anyMarginHeavy = true;
         }
       }
-      if (anyMarginHeavy && bestCrop) {
-        state.pdfCropRel = bestCrop;
+      if (anyMarginHeavy && perPage.some(Boolean)) {
+        const sharedX = xMin;
+        const sharedWidth = Math.max(0.01, xMax - xMin);
+        state.pdfCropPerPage = perPage.map((rel) =>
+          rel ? { x: sharedX, y: rel.y, width: sharedWidth, height: rel.height } : null,
+        );
         state.pdfCropEnabled = true;
       } else {
-        state.pdfCropRel = null;
+        state.pdfCropPerPage = null;
         state.pdfCropEnabled = false;
       }
     }
@@ -584,12 +590,14 @@ async function renderPdfFromDoc() {
       const page = await pdf.getPage(i);
       const baseViewport = page.getViewport({ scale: 1 });
       let crop = { x: 0, y: 0, width: baseViewport.width, height: baseViewport.height };
-      if (state.pdfCropEnabled && state.pdfCropRel) {
+      const pageCropRel =
+        state.pdfCropEnabled && state.pdfCropPerPage ? state.pdfCropPerPage[i - 1] : null;
+      if (pageCropRel) {
         crop = {
-          x: baseViewport.width * state.pdfCropRel.x,
-          y: baseViewport.height * state.pdfCropRel.y,
-          width: baseViewport.width * state.pdfCropRel.width,
-          height: baseViewport.height * state.pdfCropRel.height,
+          x: baseViewport.width * pageCropRel.x,
+          y: baseViewport.height * pageCropRel.y,
+          width: baseViewport.width * pageCropRel.width,
+          height: baseViewport.height * pageCropRel.height,
         };
       }
 
