@@ -133,7 +133,8 @@ function updateUrlButtonState() {
 function getScrollStep() {
   const height = Math.max(1, scrollArea.clientHeight);
   const lineHeight = Math.round(state.fontSize * 1.7);
-  return Math.max(lineHeight, height - lineHeight);
+  const overlap = Math.round(lineHeight / 2);
+  return Math.max(lineHeight, height - overlap);
 }
 
 function setFontSize(size) {
