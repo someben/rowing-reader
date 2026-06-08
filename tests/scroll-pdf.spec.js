@@ -31,7 +31,7 @@ test("full-mode PDF scrolls one viewport minus one line height per click", async
     const height = scrollArea.clientHeight;
     const fontSize = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--reader-font-size"));
     const lineHeight = Math.round(fontSize * 1.7);
-    const overlap = Math.round(lineHeight / 2);
+    const overlap = Math.round(lineHeight / 4);
     const expectedStep = Math.max(lineHeight, height - overlap);
     const before = scrollArea.scrollTop;
     forward.click();

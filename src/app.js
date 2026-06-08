@@ -1,6 +1,5 @@
 const fileInput = document.getElementById("fileInput");
 const dropZone = document.getElementById("dropZone");
-const statusEl = document.getElementById("status");
 const dropSubtitle = document.getElementById("dropSubtitle");
 const urlInput = document.getElementById("urlInput");
 const urlLoad = document.getElementById("urlLoad");
@@ -15,9 +14,7 @@ const halfToggle = document.getElementById("halfToggle");
 const unlockZone = document.getElementById("unlockZone");
 const scrollBack = document.getElementById("scrollBack");
 
-const BASE_FONT_SIZE = 18;
 const state = {
-  fontSize: BASE_FONT_SIZE,
   currentFile: null,
   currentType: null,
   currentPdfData: null,
@@ -32,8 +29,6 @@ const state = {
   pdfCropEnabled: false,
   scrollUpdateQueued: false,
   slicePositions: [],
-  halfTextColumn: 0,
-  textColumnsEl: null,
   lastTapTime: 0,
   lastTapX: 0,
   lastTapY: 0,
@@ -43,8 +38,8 @@ const state = {
 
 const HTML_STYLE = `
   :root {
-    font-size: ${BASE_FONT_SIZE}px;
-    line-height: 1.7;
+    font-size: var(--reader-font-size, 18px);
+    line-height: var(--reader-line-height, 1.7);
     font-family: "Source Sans 3", "Segoe UI", sans-serif;
     color: #1c1b1a;
     text-rendering: optimizeLegibility;
@@ -62,9 +57,10 @@ const HTML_STYLE = `
   }
 `;
 
-function setStatus(text) {
-  if (!statusEl) return;
-  statusEl.textContent = text;
+function setDropMessage(text) {
+  if (!dropSubtitle) return;
+  dropSubtitle.textContent = text || "";
+  dropSubtitle.classList.toggle("is-hidden", !text);
 }
 
 function resetProgress() {
@@ -132,22 +128,21 @@ function updateUrlButtonState() {
 
 function getScrollStep() {
   const height = Math.max(1, scrollArea.clientHeight);
-  const lineHeight = Math.round(state.fontSize * 1.7);
-  const overlap = Math.round(lineHeight / 2);
+  const styles = getComputedStyle(content);
+  const fontSize = parseFloat(styles.fontSize) || 18;
+  const rawLH = parseFloat(styles.lineHeight);
+  let lineHeightPx;
+  if (!Number.isFinite(rawLH) || rawLH <= 0) {
+    lineHeightPx = fontSize * 1.7;
+  } else if (rawLH < 5) {
+    // Unitless multiplier (some browsers return "1.7").
+    lineHeightPx = rawLH * fontSize;
+  } else {
+    lineHeightPx = rawLH;
+  }
+  const lineHeight = Math.round(lineHeightPx);
+  const overlap = Math.round(lineHeight / 4);
   return Math.max(lineHeight, height - overlap);
-}
-
-function setFontSize(size) {
-  const clamped = Math.max(14, Math.min(28, size));
-  state.fontSize = clamped;
-  document.documentElement.style.setProperty("--reader-font-size", `${clamped}px`);
-  if (state.currentType === "pdf" && state.currentPdfData) {
-    renderPdfFromDoc();
-  }
-  if (state.currentType === "html" && state.currentIframe) {
-    applyIframeStyles(state.currentIframe);
-  }
-  queueScrollUpdate();
 }
 
 function detectType(file) {
@@ -163,15 +158,8 @@ function resetContent() {
   state.currentIframe = null;
   content.classList.remove("pdf-mode");
   state.slicePositions = [];
-  state.textColumnsEl = null;
-  state.halfTextColumn = 0;
   state.pdfCropPerPage = null;
   state.pdfCropEnabled = false;
-}
-
-function applyTextHalfColumn() {
-  if (!state.textColumnsEl) return;
-  state.textColumnsEl.classList.toggle("column-right", state.halfTextColumn === 1);
 }
 
 function getTextWidth() {
@@ -234,7 +222,6 @@ function renderHalfText(html) {
   measure.appendChild(measureArticle);
   content.appendChild(measure);
 
-  state.textColumnsEl = null;
   requestAnimationFrame(() => {
     requestAnimationFrame(async () => {
       await waitForImages(measure);
@@ -329,7 +316,7 @@ function applyIframeStyles(iframe) {
   const doc = iframe.contentDocument;
   if (!doc) return;
   const style = doc.createElement("style");
-  style.textContent = HTML_STYLE.replace(`${BASE_FONT_SIZE}px`, `${state.fontSize}px`);
+  style.textContent = HTML_STYLE;
   if (doc.head) {
     doc.head.appendChild(style);
   } else {
@@ -344,8 +331,13 @@ function renderHtml(text) {
   iframe.className = "html-frame";
   iframe.setAttribute("sandbox", "allow-same-origin");
   iframe.srcdoc = text;
-  iframe.onload = () => {
+  iframe.onload = async () => {
     applyIframeStyles(iframe);
+    const doc = iframe.contentDocument;
+    if (doc) {
+      await waitForImages(doc);
+      iframe.style.height = `${doc.documentElement.scrollHeight}px`;
+    }
     updateScrollButtons();
     applyScrollRestore();
   };
@@ -474,8 +466,6 @@ async function loadPdfDocument(pdfData) {
   }
   if (state.currentPdfDoc) return state.currentPdfDoc;
   console.info("[Rowing Reader] PDF load started");
-  window.pdfjsLib.GlobalWorkerOptions.workerSrc =
-    "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js";
   const normalized = normalizePdfData(pdfData);
   if (!normalized) {
     renderText("PDF renderer not available. Invalid PDF data.");
@@ -529,6 +519,33 @@ function applyScrollRestore() {
   }
 }
 
+// Pick the smallest "typical" value from a set of per-page edges, ignoring
+// outliers that lie more than ~5% of page width below the median. This drops
+// page-1 vertical stamps (e.g. arXiv) so the shared crop reflects body text.
+function consensusLeft(values) {
+  if (values.length === 0) return 0;
+  if (values.length === 1) return values[0];
+  const sorted = [...values].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const threshold = median - 0.05;
+  for (const v of sorted) {
+    if (v >= threshold) return v;
+  }
+  return median;
+}
+
+function consensusRight(values) {
+  if (values.length === 0) return 1;
+  if (values.length === 1) return values[0];
+  const sorted = [...values].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+  const threshold = median + 0.05;
+  for (let i = sorted.length - 1; i >= 0; i -= 1) {
+    if (sorted[i] <= threshold) return sorted[i];
+  }
+  return median;
+}
+
 async function renderPdfFromDoc() {
   if (!window.pdfjsLib) {
     renderText("PDF renderer not available. Check the PDF.js script link.");
@@ -551,8 +568,8 @@ async function renderPdfFromDoc() {
     if (!state.pdfCropPerPage && pdf.numPages > 0) {
       const perPage = [];
       let anyMarginHeavy = false;
-      let xMin = 1;
-      let xMax = 0;
+      const xs = [];
+      const rights = [];
       for (let i = 1; i <= pdf.numPages; i += 1) {
         const page = await pdf.getPage(i);
         const baseViewport = page.getViewport({ scale: 1 });
@@ -568,15 +585,18 @@ async function renderPdfFromDoc() {
           height: analysis.crop.height / baseViewport.height,
         };
         perPage.push(rel);
-        xMin = Math.min(xMin, rel.x);
-        xMax = Math.max(xMax, rel.x + rel.width);
+        xs.push(rel.x);
+        rights.push(rel.x + rel.width);
         if (analysis.isMarginHeavy) {
           anyMarginHeavy = true;
         }
       }
       if (anyMarginHeavy && perPage.some(Boolean)) {
-        const sharedX = xMin;
-        const sharedWidth = Math.max(0.01, xMax - xMin);
+        // Ignore left/right outliers — e.g. an arXiv-style vertical stamp on page 1
+        // that would otherwise pull the shared crop to the very edge.
+        const sharedX = consensusLeft(xs);
+        const sharedRight = consensusRight(rights);
+        const sharedWidth = Math.max(0.01, sharedRight - sharedX);
         state.pdfCropPerPage = perPage.map((rel) =>
           rel ? { x: sharedX, y: rel.y, width: sharedWidth, height: rel.height } : null,
         );
@@ -677,7 +697,7 @@ async function handleFile(file) {
   updateHalfToggle();
   document.body.classList.toggle("has-pdf", state.currentType === "pdf");
   document.body.classList.toggle("has-file", true);
-  setStatus(`Loaded ${file.name} (${state.currentType}).`);
+  setDropMessage("");
   state.resetScrollOnRender = true;
   resetProgress();
   unlockZone.classList.remove("is-hidden");
@@ -727,9 +747,7 @@ async function handleUrlLoad(rawUrl) {
   if (!url) return;
   try {
     setLoading(true);
-    if (dropSubtitle) {
-      dropSubtitle.textContent = "Loading URL...";
-    }
+    setDropMessage("Loading URL…");
     const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
@@ -739,9 +757,7 @@ async function handleUrlLoad(rawUrl) {
     const file = new File([blob], nameFromUrl, { type: blob.type || "" });
     await handleFile(file);
   } catch (err) {
-    if (dropSubtitle) {
-      dropSubtitle.textContent = `Failed to load URL (${err.message || err}).`;
-    }
+    setDropMessage(`Failed to load URL (${err.message || err}).`);
     setLoading(false);
   }
 }
@@ -963,9 +979,25 @@ function setupStrictScrolling() {
 }
 
 function setupEvents() {
+  const fileButton = fileInput.closest(".file-button");
+  let filePickerPending = false;
+  const clearFilePickerPending = () => {
+    if (!filePickerPending) return;
+    filePickerPending = false;
+    if (fileButton) fileButton.classList.remove("is-pending");
+  };
+
+  fileInput.addEventListener("click", () => {
+    filePickerPending = true;
+    if (fileButton) fileButton.classList.add("is-pending");
+  });
+
   fileInput.addEventListener("change", (event) => {
+    clearFilePickerPending();
     handleFiles(event.target.files);
   });
+
+  window.addEventListener("focus", clearFilePickerPending);
 
   dropZone.addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -1042,7 +1074,6 @@ function setupEvents() {
 
 setupStrictScrolling();
 setupEvents();
-setFontSize(BASE_FONT_SIZE);
 updateHalfToggle();
 queueScrollUpdate();
 updateUrlButtonState();

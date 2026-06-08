@@ -8,7 +8,6 @@
   --accent: #cf6a2d;
   --reader-font-size: 18px;
   --reader-line-height: 1.7;
-  --reader-max-width: 74ch;
   --shadow: 0 24px 60px rgba(15, 25, 35, 0.18);
 }
 
@@ -53,16 +52,11 @@ body.has-file .drop-zone {
   display: none;
 }
 
-body.has-pdf .status,
-body.has-file .status {
-  display: none;
-}
-
 .topbar {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 24px;
+  gap: 12px;
   height: 40px;
 }
 
@@ -147,7 +141,7 @@ body.has-file .status {
 .controls {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   background: transparent;
   border: none;
   padding: 0;
@@ -162,13 +156,13 @@ body.has-file .status {
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  padding: 0 14px;
-  height: 34px;
+  padding: 0 20px;
+  height: 40px;
   border-radius: 8px;
   background: #6495ed;
   color: #fff;
   font-family: inherit;
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
   line-height: 0.85;
   cursor: pointer;
@@ -199,6 +193,12 @@ body.has-file .status {
   box-shadow: none;
 }
 
+.controls .control-button {
+  padding: 0 20px;
+  height: 40px;
+  font-size: 14px;
+}
+
 .control-button:disabled,
 .file-button:has(input:disabled) {
   background: rgba(20, 24, 32, 0.18);
@@ -217,6 +217,13 @@ body.has-file .status {
 
 .controls :is(.file-button, .control-button):hover {
   background: #5b86db;
+}
+
+.controls .file-button:active,
+.controls .control-button:active,
+.controls .file-button.is-pending,
+.controls .file-button.is-pending:hover {
+  background: rgba(20, 24, 32, 0.45);
 }
 
 .drop-zone {
@@ -240,6 +247,10 @@ body.has-file .status {
   font-size: 13px;
   color: var(--muted);
   margin-top: 6px;
+}
+
+.drop-subtitle.is-hidden {
+  display: none;
 }
 
 .url-input-row {
@@ -321,17 +332,6 @@ body.has-file .status {
   overflow: hidden;
 }
 
-.text-columns {
-  width: 200%;
-  column-count: 2;
-  column-gap: 0;
-  column-fill: auto;
-}
-
-.text-columns.column-right {
-  transform: translateX(-50%);
-}
-
 .content.pdf-mode {
   max-width: 100%;
   margin: 0;
@@ -353,13 +353,6 @@ body.has-file .status {
   background: transparent;
 }
 
-.placeholder {
-  padding: 24px;
-  background: rgba(231, 232, 235, 0.4);
-  border-radius: 16px;
-  color: var(--muted);
-}
-
 .pdf-pages {
   display: grid;
   gap: 0;
@@ -371,16 +364,11 @@ body.has-file .status {
   max-width: none;
 }
 
-.status {
-  font-size: 12px;
-  color: var(--muted);
-}
-
 .unlock-zone {
   position: fixed;
   bottom: 18px;
-  height: 20vh;
-  width: max(17vw, 120px);
+  height: 25vh;
+  width: max(13.6vw, 96px);
   border-radius: 16px;
   border: 1px solid rgba(50, 50, 50, 0.28);
   background: rgba(251, 250, 248, 0.62);
@@ -446,8 +434,8 @@ body.has-file .status {
   }
 
   .unlock-zone {
-    height: 20vh;
-    width: max(17vw, 120px);
+    height: 25vh;
+    width: max(13.6vw, 96px);
   }
 
   .brand-subtitle {

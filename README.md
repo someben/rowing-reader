@@ -42,9 +42,9 @@ python serve_local.py --host 192.168.1.178 --http-port 8123 --https-port 8124
 
 ## Behavior
 
-- The viewport never scrolls by wheel, touch, or keys.
-- The only scroll actions are the lower-left and lower-right buttons (or Page Up / Page Down).
-- Half toggle switches to two-column reading (PDF only).
+- The viewport never scrolls by wheel, touch, or pinch.
+- The only scroll actions are the lower-left and lower-right buttons, or the keys: PageUp/PageDown, ArrowLeft/ArrowRight, Home/End.
+- Half toggle switches to a 2× zoomed, two-column reading layout (works for PDF, Markdown, HTML, and plain text).
 
 ## Notes
 
