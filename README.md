@@ -44,9 +44,9 @@ python serve_local.py --host 192.168.1.178 --http-port 8123 --https-port 8124
 
 - The viewport never scrolls by wheel, touch, or pinch.
 - The only scroll actions are the lower-left and lower-right buttons, or the keys: PageUp/PageDown, ArrowLeft/ArrowRight, Home/End.
-- Half toggle switches to a 2× zoomed, two-column reading layout (works for PDF, Markdown, HTML, and plain text).
+- Half toggle switches to a 2× zoomed, two-column reading layout (works for PDF, Markdown, and plain text). HTML is displayed full-width only.
 
 ## Notes
 
-- PDF and Markdown rendering use CDN scripts (`pdf.js`, `marked`).
+- PDF and Markdown rendering use CDN scripts (`pdf.js`, `marked`, and `DOMPurify`, which sanitizes rendered Markdown).
 - For offline use, download those scripts and update the script tags in `index.html`.

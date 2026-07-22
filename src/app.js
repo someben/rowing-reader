@@ -275,8 +275,10 @@ function renderMarkdown(text) {
   const article = document.createElement("article");
   article.className = "reader-article";
   applyTextWidths(article, getTextWidth());
-  if (window.marked && typeof window.marked.parse === "function") {
-    const html = window.marked.parse(text);
+  if (window.marked && typeof window.marked.parse === "function" && window.DOMPurify) {
+    // marked does not sanitize; scrub the HTML before it touches the main
+    // document (an uploaded/fetched .md could otherwise carry active markup).
+    const html = window.DOMPurify.sanitize(window.marked.parse(text));
     if (state.halfMode) {
       renderHalfText(html);
       return;

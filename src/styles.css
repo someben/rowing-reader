@@ -279,7 +279,7 @@ body.has-file .drop-zone {
   height: 48px;
   margin-left: -24px;
   margin-top: -24px;
-  z-index: 20;
+  z-index: 50;
   background-image: url("data:image/gif;base64,R0lGODlhEAAQAPQAAP///5mZmf///2ZmZv///4yMjP///2ZmZv///3R0dP///3p6ev///4yMjP///5mZmf///2ZmZv///4yMjP///3R0dP///3p6ev///4yMjP///wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAACH5BAAAAAAALAAAAAAQABAAAAVoICCOZGmeaKqubOt0Be4FQFHA7nB7oZUCNBGwVvEIGhYQFQhkYh8gJUMwHjwGz1RjUHGh1qLWAyF0D1n1E1FIFyYgC1KQhCeQmJ6WZ5yP0Z4O1QeH0QJADs=");
   background-size: cover;
   background-repeat: no-repeat;
@@ -378,6 +378,7 @@ body.has-file .drop-zone {
   padding: 8px;
   cursor: pointer;
   box-shadow: 0 12px 22px rgba(18, 24, 32, 0.12);
+  z-index: 10;
 }
 
 .unlock-zone svg {
