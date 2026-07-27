@@ -11,6 +11,37 @@ from socket import AF_INET, SOCK_DGRAM, socket
 from urllib.parse import urlunsplit
 
 
+# The request line is attacker-controlled, and Python 3.8's http.server writes it
+# to stderr verbatim in its access log. A crafted request could therefore smuggle
+# ANSI / terminal escape sequences into the log and scramble the tmux pane running
+# the server, so escape every C0/C1 control byte and DEL before logging. (Newer
+# Pythons do this themselves via BaseHTTPRequestHandler._control_char_table; 3.8
+# does not.)
+_LOG_CTRL_ESCAPES = {
+    c: f"\\x{c:02x}" for c in list(range(0x20)) + [0x7F] + list(range(0x80, 0xA0))
+}
+
+
+class SafeLogMixin:
+    """Escape control characters in every logged request line so a malicious
+    request can't corrupt the terminal. Mixed in ahead of the stdlib handler so
+    this log_message wins."""
+
+    def log_message(self, format: str, *args) -> None:  # noqa: A002 - stdlib signature
+        try:
+            message = format % args
+        except Exception:
+            message = format
+        sys.stderr.write(
+            "%s - - [%s] %s\n"
+            % (
+                self.address_string(),
+                self.log_date_time_string(),
+                message.translate(_LOG_CTRL_ESCAPES),
+            )
+        )
+
+
 def detect_local_ip() -> str:
     # Best-effort local LAN IP detection without external dependencies.
     try:
@@ -84,7 +115,7 @@ def main() -> int:
         )
         return 2
 
-    class NoCacheRequestHandler(SimpleHTTPRequestHandler):
+    class NoCacheRequestHandler(SafeLogMixin, SimpleHTTPRequestHandler):
         def send_head(self):
             # Strip conditional headers to avoid 304 responses.
             if "If-Modified-Since" in self.headers:
@@ -101,7 +132,7 @@ def main() -> int:
 
     https_handler = partial(NoCacheRequestHandler, directory=str(root))
 
-    class RedirectHandler(BaseHTTPRequestHandler):
+    class RedirectHandler(SafeLogMixin, BaseHTTPRequestHandler):
         def _redirect(self) -> None:
             host = self.headers.get("Host", args.host)
             # Replace port if present; otherwise append HTTPS port.
