@@ -40,6 +40,32 @@ You can override the bind address and ports:
 python serve_local.py --host 192.168.1.178 --http-port 8123 --https-port 8124
 ```
 
+## Loading a document
+
+Four ways in, all equivalent:
+
+- **Upload** picks a local file.
+- **Drag-and-drop** a file, or a link / browser tab / selected URL, anywhere on the page.
+- **Paste** (Ctrl/Cmd-V) a URL into the URL field or onto the page. Copied files paste too.
+- **`?url=`** loads a document on page load, e.g. `https://…:8124/?url=https://arxiv.org/pdf/2301.00001`.
+
+URLs may omit the scheme (`arxiv.org/pdf/2301.00001` works). A document is
+treated as a PDF when its bytes start with `%PDF-`, so a missing `.pdf`
+extension or a wrong `Content-Type` still renders correctly.
+
+### Why URLs need `serve_local.py`
+
+Most sites that host a PDF send no `Access-Control-Allow-Origin` header, so the
+browser blocks the page from fetching them directly. `serve_local.py` exposes a
+same-origin relay at `/__fetch?url=…` and the page falls back to it whenever a
+direct fetch fails. Under a plain static server (`python -m http.server`) the
+relay does not exist, so only same-origin and CORS-enabled URLs load.
+
+The relay will fetch any http(s) URL reachable from the machine running it,
+except loopback, link-local, and multicast addresses — so it cannot be used to
+probe services bound only to that machine. Other LAN addresses are allowed on
+purpose, so a PDF on a local NAS still loads. Run it on trusted networks only.
+
 ## Behavior
 
 - The viewport never scrolls by wheel, touch, or pinch.

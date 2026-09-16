@@ -6,9 +6,12 @@ import ssl
 import sys
 from functools import partial
 from http.server import BaseHTTPRequestHandler, SimpleHTTPRequestHandler, ThreadingHTTPServer
+from ipaddress import ip_address
 from pathlib import Path
-from socket import AF_INET, SOCK_DGRAM, socket
-from urllib.parse import urlunsplit
+from socket import AF_INET, IPPROTO_TCP, SOCK_DGRAM, getaddrinfo, socket
+from urllib.error import HTTPError, URLError
+from urllib.parse import parse_qs, urlsplit, urlunsplit
+from urllib.request import HTTPRedirectHandler, Request, build_opener
 
 
 # The request line is attacker-controlled, and Python 3.8's http.server writes it
@@ -40,6 +43,64 @@ class SafeLogMixin:
                 message.translate(_LOG_CTRL_ESCAPES),
             )
         )
+
+
+# Same-origin relay for "load this URL" in the browser. Most sites that host a
+# PDF send no Access-Control-Allow-Origin header, so the page's own fetch() is
+# blocked; the browser asks us to fetch it instead.
+PROXY_PATH = "/__fetch"
+PROXY_MAX_BYTES = 512 * 1024 * 1024
+PROXY_TIMEOUT = 30
+PROXY_MAX_REDIRECTS = 5
+PROXY_USER_AGENT = "RowingReader/1.0 (+local relay)"
+# Headers worth passing back to the page; everything else (cookies, auth,
+# framing policies) is dropped. Content-Encoding has to travel with the body it
+# describes — urllib hands us the bytes undecoded.
+PROXY_FORWARD_HEADERS = (
+    "Content-Type",
+    "Content-Disposition",
+    "Content-Length",
+    "Content-Encoding",
+)
+
+
+class ProxyRefused(Exception):
+    """The requested URL is not one this relay will fetch."""
+
+
+def check_proxy_target(url: str) -> None:
+    """Reject anything that isn't a plain remote http(s) document.
+
+    The relay is reachable by anyone who can reach this server, so it must not
+    become a way to probe services that are only listening on loopback, or a
+    cloud metadata endpoint. Other LAN addresses stay allowed on purpose: a PDF
+    on a NAS is a legitimate thing to read.
+    """
+    parts = urlsplit(url)
+    if parts.scheme not in ("http", "https"):
+        raise ProxyRefused("only http and https URLs can be relayed")
+    host = parts.hostname
+    if not host:
+        raise ProxyRefused("URL has no host")
+    port = parts.port or (443 if parts.scheme == "https" else 80)
+    try:
+        infos = getaddrinfo(host, port, proto=IPPROTO_TCP)
+    except OSError:
+        raise ProxyRefused(f"cannot resolve {host}") from None
+    for info in infos:
+        addr = ip_address(info[4][0])
+        if addr.is_loopback or addr.is_link_local or addr.is_multicast or addr.is_unspecified:
+            raise ProxyRefused(f"refusing to relay {host} ({addr})")
+
+
+class CheckedRedirectHandler(HTTPRedirectHandler):
+    """Re-run the target check on every redirect hop."""
+
+    max_redirections = PROXY_MAX_REDIRECTS
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        check_proxy_target(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
 def detect_local_ip() -> str:
@@ -116,6 +177,95 @@ def main() -> int:
         return 2
 
     class NoCacheRequestHandler(SafeLogMixin, SimpleHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802 - stdlib naming
+            if urlsplit(self.path).path == PROXY_PATH:
+                self.relay_url()
+                return
+            super().do_GET()
+
+        def do_HEAD(self) -> None:  # noqa: N802 - stdlib naming
+            if urlsplit(self.path).path == PROXY_PATH:
+                self.send_error(405, "HEAD not supported on the relay")
+                return
+            super().do_HEAD()
+
+        def send_plain_error(self, code: int, message: str) -> None:
+            body = message.encode("utf-8", "replace")
+            self.send_response(code)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def relay_url(self) -> None:
+            query = parse_qs(urlsplit(self.path).query)
+            targets = query.get("url") or []
+            if not targets or not targets[0].strip():
+                self.send_plain_error(400, "missing ?url= parameter")
+                return
+            target = targets[0].strip()
+
+            try:
+                check_proxy_target(target)
+            except ProxyRefused as exc:
+                self.send_plain_error(403, str(exc))
+                return
+
+            opener = build_opener(CheckedRedirectHandler)
+            request = Request(
+                target,
+                headers={
+                    "User-Agent": PROXY_USER_AGENT,
+                    "Accept": "*/*",
+                    # Relay raw bytes; nothing here decompresses a response.
+                    "Accept-Encoding": "identity",
+                },
+            )
+            try:
+                upstream = opener.open(request, timeout=PROXY_TIMEOUT)
+            except ProxyRefused as exc:
+                self.send_plain_error(403, str(exc))
+                return
+            except HTTPError as exc:
+                self.send_plain_error(502, f"upstream returned HTTP {exc.code}")
+                return
+            except (URLError, OSError, ValueError) as exc:
+                reason = getattr(exc, "reason", exc)
+                self.send_plain_error(502, f"could not reach the URL ({reason})")
+                return
+
+            with upstream:
+                declared = upstream.headers.get("Content-Length")
+                if declared and declared.isdigit() and int(declared) > PROXY_MAX_BYTES:
+                    self.send_plain_error(413, "that document is too large to relay")
+                    return
+
+                self.send_response(200)
+                for header in PROXY_FORWARD_HEADERS:
+                    value = upstream.headers.get(header)
+                    if value:
+                        self.send_header(header, value)
+                if not upstream.headers.get("Content-Type"):
+                    self.send_header("Content-Type", "application/octet-stream")
+                # The page fetches this from its own origin, but be explicit so
+                # the response is usable if the app is ever served elsewhere.
+                self.send_header("Access-Control-Allow-Origin", "*")
+                self.end_headers()
+
+                sent = 0
+                while True:
+                    chunk = upstream.read(64 * 1024)
+                    if not chunk:
+                        break
+                    sent += len(chunk)
+                    if sent > PROXY_MAX_BYTES:
+                        self.log_message("relay aborted: %s exceeded size cap", target)
+                        break
+                    try:
+                        self.wfile.write(chunk)
+                    except (BrokenPipeError, ConnectionResetError):
+                        return
+
         def send_head(self):
             # Strip conditional headers to avoid 304 responses.
             if "If-Modified-Since" in self.headers:

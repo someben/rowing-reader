@@ -4,6 +4,7 @@ const dropSubtitle = document.getElementById("dropSubtitle");
 const urlInput = document.getElementById("urlInput");
 const urlLoad = document.getElementById("urlLoad");
 const loadingSpinner = document.getElementById("loadingSpinner");
+const statusToast = document.getElementById("statusToast");
 const content = document.getElementById("content");
 const scrollArea = document.getElementById("scrollArea");
 const progressFill = document.getElementById("progressFill");
@@ -34,7 +35,15 @@ const state = {
   lastTapY: 0,
   ignoreClickUntil: 0,
   scrollRestore: null,
+  statusTimer: 0,
+  dragDepth: 0,
 };
+
+// Same-origin endpoint served by serve_local.py. Cross-origin PDFs usually have
+// no `Access-Control-Allow-Origin` header, so a direct fetch() is blocked by the
+// browser; this relays the bytes instead.
+const URL_PROXY_PATH = "/__fetch";
+const PDF_MAGIC = "%PDF-";
 
 const HTML_STYLE = `
   :root {
@@ -110,20 +119,102 @@ function setLoading(isLoading) {
   }
 }
 
-function isReasonableUrl(rawUrl) {
-  const value = rawUrl?.trim();
-  if (!value) return false;
+// Accepts what people actually paste or drag: a full URL, a bare host
+// ("arxiv.org/pdf/1234"), or either of those wrapped in <angle brackets>.
+// Returns an absolute href, or null when the text is not URL-ish.
+function normalizeUrl(rawUrl) {
+  const value = (rawUrl || "").trim().replace(/^<(.*)>$/, "$1").trim();
+  if (!value) return null;
+  // The negative lookahead keeps "localhost:8000/a.pdf" and "nas:8080/a.pdf"
+  // from being read as a scheme — a colon followed by digits is a port.
+  const hasScheme = /^[a-z][a-z0-9+.-]*:(?!\d)/i.test(value);
+  let parsed;
   try {
-    const parsed = new URL(value);
-    return parsed.protocol === "http:" || parsed.protocol === "https:" || parsed.protocol === "file:";
+    parsed = new URL(hasScheme ? value : `https://${value}`);
   } catch {
-    return false;
+    return null;
   }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:" && parsed.protocol !== "file:") {
+    return null;
+  }
+  if (!hasScheme && !parsed.hostname.includes(".") && parsed.hostname !== "localhost") {
+    // A single word ("notes") parses as a host once a scheme is bolted on;
+    // require a dot (or localhost) before treating bare text as a URL.
+    return null;
+  }
+  return parsed.href;
+}
+
+function isReasonableUrl(rawUrl) {
+  return normalizeUrl(rawUrl) !== null;
 }
 
 function updateUrlButtonState() {
   if (!urlLoad) return;
   urlLoad.disabled = !isReasonableUrl(urlInput?.value);
+}
+
+function setStatus(text, isError = false) {
+  setDropMessage(text);
+  if (!statusToast) return;
+  if (state.statusTimer) {
+    clearTimeout(state.statusTimer);
+    state.statusTimer = 0;
+  }
+  statusToast.textContent = text || "";
+  statusToast.classList.toggle("is-hidden", !text);
+  statusToast.classList.toggle("is-error", Boolean(text) && isError);
+  if (text) {
+    state.statusTimer = setTimeout(() => {
+      state.statusTimer = 0;
+      setStatus("");
+    }, isError ? 9000 : 4000);
+  }
+}
+
+// Pull a URL out of a drop or paste payload. Dragging a link or a browser tab
+// puts nothing in `dataTransfer.files` — the URL arrives as text instead.
+function firstUrlFromText(text) {
+  if (!text) return null;
+  for (const line of String(text).split(/[\r\n]+/)) {
+    const trimmed = line.trim();
+    // text/uri-list comments start with "#".
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const normalized = normalizeUrl(trimmed);
+    if (normalized) return normalized;
+  }
+  return null;
+}
+
+function urlFromDataTransfer(dataTransfer) {
+  if (!dataTransfer) return null;
+  const readType = (type) => {
+    try {
+      return dataTransfer.getData(type);
+    } catch {
+      return "";
+    }
+  };
+  const fromText =
+    firstUrlFromText(readType("text/uri-list")) ||
+    firstUrlFromText(readType("text/plain")) ||
+    firstUrlFromText(readType("URL"));
+  if (fromText) return fromText;
+
+  // Dragging a link out of a rendered page can arrive as an HTML fragment.
+  const html = readType("text/html");
+  if (html) {
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      const node = doc.querySelector("a[href], img[src], iframe[src], embed[src]");
+      const raw = node ? node.getAttribute("href") || node.getAttribute("src") : null;
+      const normalized = normalizeUrl(raw);
+      if (normalized) return normalized;
+    } catch {
+      // Ignore unparseable fragments.
+    }
+  }
+  return null;
 }
 
 function getScrollStep() {
@@ -699,7 +790,7 @@ async function handleFile(file) {
   updateHalfToggle();
   document.body.classList.toggle("has-pdf", state.currentType === "pdf");
   document.body.classList.toggle("has-file", true);
-  setDropMessage("");
+  setStatus("");
   state.resetScrollOnRender = true;
   resetProgress();
   unlockZone.classList.remove("is-hidden");
@@ -744,24 +835,141 @@ function handleFiles(files) {
   handleFile(files[0]);
 }
 
-async function handleUrlLoad(rawUrl) {
-  const url = rawUrl?.trim();
-  if (!url) return;
-  try {
-    setLoading(true);
-    setDropMessage("Loading URL…");
-    const response = await fetch(url);
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
+function fileNameFromUrl(url, disposition) {
+  const match = disposition ? /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(disposition) : null;
+  if (match) {
+    const raw = match[1].replace(/"$/, "").trim();
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
     }
-    const blob = await response.blob();
-    const nameFromUrl = decodeURIComponent(url.split("?")[0].split("#")[0].split("/").pop() || "document");
-    const file = new File([blob], nameFromUrl, { type: blob.type || "" });
+  }
+  try {
+    const parsed = new URL(url, window.location.href);
+    const last = parsed.pathname.split("/").filter(Boolean).pop();
+    return last ? decodeURIComponent(last) : parsed.hostname || "document";
+  } catch {
+    return "document";
+  }
+}
+
+// Servers routinely mislabel PDFs (application/octet-stream, text/plain) and
+// plenty of PDF URLs have no ".pdf" in the path, which used to make detectType()
+// fall through to the plain-text renderer. Sniff the magic bytes instead.
+async function responseToFile(response, url) {
+  const blob = await response.blob();
+  let header = "";
+  try {
+    header = await blob.slice(0, PDF_MAGIC.length).text();
+  } catch {
+    header = "";
+  }
+  const looksLikePdf = header === PDF_MAGIC;
+  const contentType = (response.headers.get("content-type") || blob.type || "").split(";")[0].trim();
+  let name = fileNameFromUrl(url, response.headers.get("content-disposition")) || "document";
+  if (looksLikePdf && !/\.pdf$/i.test(name)) {
+    name = `${name}.pdf`;
+  }
+  return new File([blob], name, { type: looksLikePdf ? "application/pdf" : contentType });
+}
+
+function proxyUrlFor(url) {
+  return `${URL_PROXY_PATH}?url=${encodeURIComponent(url)}`;
+}
+
+// Ordered list of ways to try to get at a URL: straight fetch first (works for
+// same-origin and CORS-enabled hosts), then the local relay.
+function buildFetchPlans(url) {
+  const page = window.location.protocol;
+  const plans = [];
+  let parsed;
+  try {
+    parsed = new URL(url, window.location.href);
+  } catch {
+    return plans;
+  }
+  const remote = parsed.protocol === "http:" || parsed.protocol === "https:";
+  const sameOrigin = remote && parsed.origin === window.location.origin;
+  // An https page can never fetch http:// content — skip straight to the relay.
+  const mixedContent = page === "https:" && parsed.protocol === "http:";
+  if (!mixedContent) {
+    plans.push({ url: parsed.href, via: "direct" });
+  }
+  if (remote && !sameOrigin && (page === "http:" || page === "https:")) {
+    plans.push({ url: proxyUrlFor(parsed.href), via: "proxy" });
+  }
+  return plans;
+}
+
+async function describeFailure(response, via) {
+  if (via !== "proxy") return `HTTP ${response.status}`;
+  if (response.status === 404) {
+    return "blocked by CORS, and the local relay is not running (start serve_local.py)";
+  }
+  try {
+    const detail = (await response.text()).trim();
+    if (detail) return detail.slice(0, 200);
+  } catch {
+    // Fall through to the status code.
+  }
+  return `relay returned HTTP ${response.status}`;
+}
+
+async function fetchDocumentFile(url) {
+  const plans = buildFetchPlans(url);
+  if (!plans.length) throw new Error("unsupported URL");
+  let lastError = null;
+  for (const plan of plans) {
+    try {
+      const response = await fetch(plan.url, { credentials: "omit", redirect: "follow" });
+      if (!response.ok) {
+        throw new Error(await describeFailure(response, plan.via));
+      }
+      console.info(`[Rowing Reader] fetched ${url} via ${plan.via}`);
+      return await responseToFile(response, url);
+    } catch (err) {
+      lastError = err;
+      console.warn(`[Rowing Reader] ${plan.via} fetch failed for ${url}: ${err.message || err}`);
+    }
+  }
+  throw lastError || new Error("could not fetch");
+}
+
+async function handleUrlLoad(rawUrl) {
+  const url = normalizeUrl(rawUrl);
+  if (!url) {
+    setStatus("That is not a URL I can load.", true);
+    return;
+  }
+  if (urlInput) {
+    urlInput.value = url;
+    updateUrlButtonState();
+  }
+  setLoading(true);
+  setStatus("Loading URL…");
+  try {
+    const file = await fetchDocumentFile(url);
     await handleFile(file);
+    setStatus("");
   } catch (err) {
-    setDropMessage(`Failed to load URL (${err.message || err}).`);
+    setStatus(`Could not load ${url} — ${err.message || err}`, true);
+  } finally {
     setLoading(false);
   }
+}
+
+function handleDataTransfer(dataTransfer) {
+  if (dataTransfer && dataTransfer.files && dataTransfer.files.length) {
+    handleFiles(dataTransfer.files);
+    return true;
+  }
+  const url = urlFromDataTransfer(dataTransfer);
+  if (url) {
+    handleUrlLoad(url);
+    return true;
+  }
+  return false;
 }
 
 function updateHalfToggle() {
@@ -980,6 +1188,93 @@ function setupStrictScrolling() {
   });
 }
 
+function setDragActive(active) {
+  dropZone.classList.toggle("dragover", active);
+  document.body.classList.toggle("is-dragging", active);
+}
+
+function isDraggingContent(event) {
+  const types = event.dataTransfer ? event.dataTransfer.types : null;
+  if (!types) return false;
+  return Array.from(types).some(
+    (type) =>
+      type === "Files" ||
+      type === "text/uri-list" ||
+      type === "text/plain" ||
+      type === "text/html" ||
+      type === "URL",
+  );
+}
+
+// Listen on the window, not just the drop zone: the drop zone is hidden once a
+// document is open (body.has-file), and without a window-level preventDefault
+// the browser navigates away from the app to whatever was dropped.
+function setupDragAndDrop() {
+  window.addEventListener("dragenter", (event) => {
+    if (!isDraggingContent(event)) return;
+    event.preventDefault();
+    state.dragDepth += 1;
+    setDragActive(true);
+  });
+
+  window.addEventListener("dragover", (event) => {
+    if (!isDraggingContent(event)) return;
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "copy";
+    }
+    setDragActive(true);
+  });
+
+  window.addEventListener("dragleave", () => {
+    state.dragDepth = Math.max(0, state.dragDepth - 1);
+    if (state.dragDepth === 0) setDragActive(false);
+  });
+
+  window.addEventListener("dragend", () => {
+    state.dragDepth = 0;
+    setDragActive(false);
+  });
+
+  window.addEventListener("drop", (event) => {
+    event.preventDefault();
+    state.dragDepth = 0;
+    setDragActive(false);
+    if (!handleDataTransfer(event.dataTransfer)) {
+      setStatus("Nothing loadable there — drop a file or a URL.", true);
+    }
+  });
+}
+
+function setupPaste() {
+  document.addEventListener("paste", (event) => {
+    const target = event.target;
+    const isEditable =
+      target &&
+      (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable);
+    // Only the URL field and the bare page are ours to hijack.
+    if (isEditable && target !== urlInput) return;
+
+    const clipboard = event.clipboardData;
+    if (!clipboard) return;
+
+    if (!isEditable && clipboard.files && clipboard.files.length) {
+      event.preventDefault();
+      handleFiles(clipboard.files);
+      return;
+    }
+
+    const url = urlFromDataTransfer(clipboard);
+    if (!url) {
+      // Let a non-URL paste fall through to the input so it stays editable.
+      if (!isEditable) setStatus("The clipboard has no URL to load.", true);
+      return;
+    }
+    event.preventDefault();
+    handleUrlLoad(url);
+  });
+}
+
 function setupEvents() {
   const fileButton = fileInput.closest(".file-button");
   let filePickerPending = false;
@@ -1001,20 +1296,8 @@ function setupEvents() {
 
   window.addEventListener("focus", clearFilePickerPending);
 
-  dropZone.addEventListener("dragover", (event) => {
-    event.preventDefault();
-    dropZone.classList.add("dragover");
-  });
-
-  dropZone.addEventListener("dragleave", () => {
-    dropZone.classList.remove("dragover");
-  });
-
-  dropZone.addEventListener("drop", (event) => {
-    event.preventDefault();
-    dropZone.classList.remove("dragover");
-    handleFiles(event.dataTransfer.files);
-  });
+  setupDragAndDrop();
+  setupPaste();
 
   urlLoad.addEventListener("click", () => {
     if (urlLoad.disabled) return;
@@ -1031,6 +1314,14 @@ function setupEvents() {
   urlInput.addEventListener("input", () => {
     updateUrlButtonState();
   });
+
+  urlInput.addEventListener("change", () => {
+    updateUrlButtonState();
+  });
+
+  if (statusToast) {
+    statusToast.addEventListener("click", () => setStatus(""));
+  }
 
   halfToggle.addEventListener("click", () => {
     state.scrollRestore = captureScrollRestore();
@@ -1088,6 +1379,5 @@ document.addEventListener("pdf-render-complete", () => {
 
 const urlParam = new URLSearchParams(window.location.search).get("url");
 if (urlParam) {
-  urlInput.value = urlParam;
   handleUrlLoad(urlParam);
 }

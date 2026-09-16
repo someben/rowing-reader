@@ -58,11 +58,12 @@
 
       <section id="dropZone" class="drop-zone">
         <div class="drop-inner">
-          <div class="drop-title">Drag-and-drop a file</div>
+          <div class="drop-title">Drag-and-drop a file or a URL</div>
           <div class="url-input-row">
             <input
               id="urlInput"
-              type="url"
+              type="text"
+              inputmode="url"
               placeholder="...or paste a URL here"
               spellcheck="false"
               autocomplete="off"
@@ -73,6 +74,10 @@
         </div>
       </section>
       <div id="loadingSpinner" class="loading-spinner is-hidden" aria-hidden="true"></div>
+      <div id="statusToast" class="status-toast is-hidden" role="status" aria-live="polite"></div>
+      <div id="dropOverlay" class="drop-overlay" aria-hidden="true">
+        <div class="drop-overlay-text">Drop a file or a URL</div>
+      </div>
 
       <main id="viewer" class="viewer" aria-live="polite">
         <div id="scrollArea" class="scroll-area">
