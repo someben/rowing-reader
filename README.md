@@ -66,6 +66,11 @@ except loopback, link-local, and multicast addresses — so it cannot be used to
 probe services bound only to that machine. Other LAN addresses are allowed on
 purpose, so a PDF on a local NAS still loads. Run it on trusted networks only.
 
+One exception: a name that `/etc/hosts` maps to a loopback address (other than
+`localhost` and its stock aliases) is relayed on its scheme's standard port
+(80 for http, 443 for https). That covers a machine hosting its own public site
+and pinning that site's name to `127.0.0.1`.
+
 ## Behavior
 
 - The viewport never scrolls by wheel, touch, or pinch.

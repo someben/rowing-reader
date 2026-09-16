@@ -68,6 +68,41 @@ class ProxyRefused(Exception):
     """The requested URL is not one this relay will fetch."""
 
 
+HOSTS_FILE = Path("/etc/hosts")
+
+
+def hosts_file_loopback_names() -> frozenset:
+    """Names the machine's own hosts file pins to a loopback address.
+
+    A box that also serves a public site often maps that site's name to
+    127.0.0.1 so it reaches itself directly. Those names are chosen by whoever
+    administers the machine (a remote DNS answer can't add one), so they are
+    trusted — but the stock localhost aliases are not, since they exist on
+    every box and name nothing but loopback.
+    """
+    excluded = {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
+    names = set()
+    try:
+        lines = HOSTS_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return frozenset()
+    for line in lines:
+        fields = line.split("#", 1)[0].split()
+        if len(fields) < 2:
+            continue
+        try:
+            if not ip_address(fields[0]).is_loopback:
+                continue
+        except ValueError:
+            continue
+        for name in fields[1:]:
+            name = name.lower().rstrip(".")
+            if name in excluded or name.endswith(".localhost"):
+                continue
+            names.add(name)
+    return frozenset(names)
+
+
 def check_proxy_target(url: str) -> None:
     """Reject anything that isn't a plain remote http(s) document.
 
@@ -82,13 +117,20 @@ def check_proxy_target(url: str) -> None:
     host = parts.hostname
     if not host:
         raise ProxyRefused("URL has no host")
-    port = parts.port or (443 if parts.scheme == "https" else 80)
+    default_port = 443 if parts.scheme == "https" else 80
+    port = parts.port or default_port
+    # A hosts-file name for this machine's own site may resolve to loopback,
+    # but only on the scheme's standard port — the port its web server answers
+    # publicly anyway — so it can't reach anything else bound to loopback.
+    local_site = host.lower().rstrip(".") in hosts_file_loopback_names() and port == default_port
     try:
         infos = getaddrinfo(host, port, proto=IPPROTO_TCP)
     except OSError:
         raise ProxyRefused(f"cannot resolve {host}") from None
     for info in infos:
         addr = ip_address(info[4][0])
+        if addr.is_loopback and local_site:
+            continue
         if addr.is_loopback or addr.is_link_local or addr.is_multicast or addr.is_unspecified:
             raise ProxyRefused(f"refusing to relay {host} ({addr})")
 
